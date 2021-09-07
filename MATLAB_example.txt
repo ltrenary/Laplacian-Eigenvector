@@ -1,0 +1,195 @@
+clear
+neofs = 100;
+problems = {'5x5','NMME-CONUS-only-exact','NMME-CONUS-only','NMME-land-only','NMME-ocean-only','NMME-global','NCEP-land-only','NCEP-ocean-only','NCEP-global',};
+
+%some of the problems have many grid points and will require a large about of RAM to execulte efficiently.
+for iproblem = 1:2%1:length(problems)
+  problem = problems{iproblem};
+  disp(['Starting ',problem])
+
+  switch problem
+   case '5x5'
+    X = 0:5:355;
+    Y = -85.5000:5:85.5000;
+    nx=length(X);
+    ny=length(Y);
+    mask = logical(ones(nx,ny));
+   case 'NCEP-global'
+    land.land = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','land');
+    X = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','X');
+    Y = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','Y');
+    mask = logical(ones(size(land.land)));
+   case 'NCEP-ocean-only'
+    land.land = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','land');
+    X = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','X');
+    Y = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','Y');
+    mask = ~logical(land.land);
+   case 'NCEP-land-only'
+    land.land = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','land');
+    X = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','X');
+    Y = ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NCEP_R1/.land/dods','Y');
+    mask = logical(land.land);
+   case 'NMME-global'
+    land.land = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','land');
+    X = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','X');
+    Y = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','Y');
+    mask = logical(ones(size(land.land)));
+   case 'NMME-ocean-only'
+    land.land = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','land');
+    X = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','X');
+    Y = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','Y');
+    mask = ~logical(land.land);
+   case 'NMME-land-only'
+    land.land = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','land');
+    X = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','X');
+    Y = ncread('http://iridl.ldeo.columbia.edu/SOURCES/.Models/.NMME/.LSMASK/.land/dods','Y');
+    mask = logical(land.land);
+   case {'NMME-CONUS-only','NMME-CONUS-only-exact'}
+    flag.flag=ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NMME/.land/X/230/300/RANGE/Y/25/50/RANGE/SOURCES/.Features/.Political/.World/.Countries/.the_geom/objectid/135/VALUE/rasterize/0/flaggt/dods','flag');
+    X=ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NMME/.land/X/230/300/RANGE/Y/25/50/RANGE/SOURCES/.Features/.Political/.World/.Countries/.the_geom/objectid/135/VALUE/rasterize/0/flaggt/dods','X');
+    Y=ncread('http://iridl.ldeo.columbia.edu/expert/home/.tippett/.Laplacian/.NMME/.land/X/230/300/RANGE/Y/25/50/RANGE/SOURCES/.Features/.Political/.World/.Countries/.the_geom/objectid/135/VALUE/rasterize/0/flaggt/dods','Y');
+    mask = logical(flag.flag);
+  end
+  
+  nx=length(X);
+  ny=length(Y);
+
+  x=double(X)/360*pi*2;
+  y=double(Y)/360*pi*2;
+  dth = abs(y(2)-y(1));
+  dph = abs(x(2)-x(1));
+
+  tic
+  idum=0; clear theta phi
+  for jj=1:ny
+    for ii=1:nx
+      if (mask(ii,jj));
+        idum=idum+1;
+        theta(idum) = y(jj);
+        phi(idum)  =  x(ii);
+      end
+    end
+  end
+  n=length(theta);
+
+  if nnz(cos(theta)<0)
+    disp('abs(theta) > pi/2!')
+    return
+  end
+
+  disp('Finished part 1.')
+  disp(['Problem size n=',int2str(n)])
+  toc
+
+  tic
+  K = zeros(n,n);
+  B = zeros(n,1);
+
+  for i1=1:n
+    i2=1:i1;
+    term1 = 2*sin( (theta(i1)-theta(i2))/2 ).^2;
+    term2 = 2*cos(theta(i1))*cos(theta(i2));
+    term3 = sin( (phi(i1)-phi(i2))/2 ).^2;
+    G = -1/(4*pi)*log(term1+term2.*term3);
+    K(i1,i2) = G.*sqrt(cos(theta(i1))*cos(theta(i2)))*dth*dph;
+    K(i2,i1) = K(i1,i2);
+    r = sqrt(dth*dph*cos(theta(i1))/pi);
+    K(i1,i1) = r^2*(1-2*log(r/sqrt(2)))/4;
+    B(i1) = sqrt(cos(theta(i1)));
+  end
+  beta = 1./sqrt(sum(B.^2));
+  B = beta*B;
+  disp('Finished part 2, construction of K.')
+
+  toc
+
+  tic
+  u = B.*ones(n,1);
+  u = u/norm(u);
+
+  %Projection
+  % if the problem is not too big we can do directly and then
+  % compute the SVD of Astar
+  %
+  %Astar = (K - u*(u'*K) - (K*u)*u' + u*(u'*K*u)*u');
+  %
+  % otherwise we compute rows at a time and overwrite K
+
+  switch problem
+	    case {'NMME-CONUS-only-exact','5x5'}
+    
+    K = (K - u*(u'*K) - (K*u)*u' + u*(u'*K*u)*u');
+    
+   otherwise
+    clear row
+    nrows = 5;
+    sz = ceil(n/nrows);
+    for ii=1:nrows
+      row{ii} = [1:sz]+(ii-1)*sz;
+    end
+    row{end} = row{end}(1):n;
+    
+    wrk = zeros(n,1);
+    
+    for ii=1:nrows
+      wrk(row{ii},1) = K(row{ii},:)*u;
+    end
+    
+    wrk0 = wrk'*u;
+    
+    for ii=1:nrows
+      K(row{ii},:) = K(row{ii},:) - u(row{ii},:)*wrk' - wrk(row{ii},1)*u' + (u(row{ii},:)*u')*wrk0 ;
+    end
+  end
+  
+  disp('Finished part 3, projection.')
+  toc
+  
+  disp('starting SVD')
+  tic
+  switch problem
+   case 'CONUS-only-exact'
+    [Z,d,v]=svd(K);
+   otherwise
+    [Z,d]=eigs(K,neofs);
+  end
+  disp('Finished SVD.')
+  toc
+
+
+  Bi = 1./B;
+  YY = NaN(ny*nx,neofs+1);
+  YY(mask(:),1) = Bi.*u;
+  YY(mask(:),2:(neofs+1)) = Bi(:,ones(1,neofs)).*Z(:,[1:neofs]);
+  YY = reshape(YY,nx,ny,neofs+1);
+
+  fid = fopen([problem,'-eof.dat'],'w','ieee-le');
+  fwrite(fid,YY,'real*4');
+  fclose(fid);
+
+  %graphics
+  if 1
+    for ii = 1:9
+      subplot(3,3,ii)
+      wrk = YY(:,:,ii);
+      imagesc(X,Y,flipud(wrk'))
+      cm = nanmax(abs(wrk(:)));
+      caxis([-1,1]*cm)
+      title(['Mode = ',int2str(ii)])
+    end
+    pause
+  end
+
+  clear YY
+
+  YYi = NaN(ny*nx,neofs+1);
+  YYi(mask(:),1) = B.*u;
+  YYi(mask(:),2:(neofs+1)) = B(:,ones(1,neofs)).*Z(:,[1:neofs]);
+  YYi = reshape(YYi,nx,ny,neofs+1);
+
+  fid = fopen([problem,'-eofi.dat'],'w','ieee-le');
+  fwrite(fid,YYi,'real*4');
+  fclose(fid);
+
+
+end
